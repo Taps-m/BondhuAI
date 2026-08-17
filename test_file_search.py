@@ -11,7 +11,7 @@ store_name = "fileSearchStores/bondhu-scheme-knowledge-bas-ctfr29lzsi9o"
 
 response = client.models.generate_content(
     model="gemini-3.5-flash",
-    contents="According to the PM-KISAN Operational Guidelines, who is eligible to receive benefits under the scheme?",
+    contents="According to the Credit Risk Rating Circular, what is the purpose of credit risk rating?",
     config=types.GenerateContentConfig(
         tools=[
             types.Tool(
