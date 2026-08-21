@@ -35,11 +35,12 @@ GENERAL
     return response.text.strip().upper()
 
 
-def answer_with_rag(question):
+def answer_with_rag(contents, system_instruction):
     response = client.models.generate_content(
         model="gemini-3.5-flash",
-        contents=question,
+        contents=contents,
         config=types.GenerateContentConfig(
+            system_instruction=system_instruction,
             tools=[
                 types.Tool(
                     file_search=types.FileSearch(
@@ -50,48 +51,86 @@ def answer_with_rag(question):
         )
     )
 
-    return response.text
+    return response
 
 
-def answer_with_web(question):
+def answer_with_web(contents, system_instruction):
     grounding_tool = types.Tool(
         google_search=types.GoogleSearch()
     )
 
     response = client.models.generate_content(
         model="gemini-3.5-flash",
-        contents=question,
+        contents=contents,
         config=types.GenerateContentConfig(
+            system_instruction=system_instruction,
             tools=[grounding_tool]
         )
     )
 
-    return response.text
+    return response
 
 
-def answer_with_general(question):
+def answer_with_general(contents, system_instruction):
     response = client.models.generate_content(
         model="gemini-3.5-flash",
-        contents=question
+        contents=contents,
+        config=types.GenerateContentConfig(
+            system_instruction=system_instruction
+        )
     )
 
-    return response.text
+    return response
 
 
-question = input("Ask Bondhu: ")
+def answer_question(
+    question,
+    conversation_history=None,
+    system_instruction=None
+):
 
-route = route_question(question)
+    if conversation_history is None:
+        conversation_history = []
 
-print("\nRoute selected:", route)
+    if system_instruction is None:
+        system_instruction = ""
 
-if route == "RAG":
-    answer = answer_with_rag(question)
+    # Build conversation context
+    contents = conversation_history + [
+        {
+            "role": "user",
+            "parts": [{"text": question}]
+        }
+    ]
 
-elif route == "WEB":
-    answer = answer_with_web(question)
+    # Decide which knowledge source to use
+    route = route_question(question)
 
-else:
-    answer = answer_with_general(question)
+    if route == "RAG":
 
-print("\nBONDHU ANSWER:\n")
-print(answer)
+        response = answer_with_rag(
+            contents,
+            system_instruction
+        )
+
+    elif route == "WEB":
+
+        response = answer_with_web(
+            contents,
+            system_instruction
+        )
+
+    else:
+
+        route = "GENERAL"
+
+        response = answer_with_general(
+            contents,
+            system_instruction
+        )
+
+    return {
+        "route": route,
+        "response": response,
+        "answer": response.text
+    }
