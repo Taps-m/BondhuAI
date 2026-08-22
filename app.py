@@ -2,9 +2,15 @@ import os
 import streamlit as st
 from google import genai
 from dotenv import load_dotenv
+
 from bondhu_orchestrator import answer_question
 
 load_dotenv()
+
+
+# --------------------------------------------------
+# GEMINI CLIENT
+# --------------------------------------------------
 
 client = genai.Client(
     api_key=os.getenv("GEMINI_API_KEY")
@@ -24,7 +30,9 @@ if "messages" not in st.session_state:
 # --------------------------------------------------
 
 if st.button("🧹 Clear Chat"):
+
     st.session_state.messages = []
+
     st.rerun()
 
 
@@ -33,11 +41,18 @@ if st.button("🧹 Clear Chat"):
 # --------------------------------------------------
 
 if not st.session_state.messages:
+
     st.markdown(
-        "<p style='text-align: center; font-size: 20px; color: #5f6368;'>"
-        "Hi! I'm Bondhu AI 👋<br>"
-        "How can I help you today?"
-        "</p>",
+        """
+        <p style="
+            text-align: center;
+            font-size: 20px;
+            color: #5f6368;
+        ">
+            Hi! I'm Bondhu AI 👋<br>
+            How can I help you today?
+        </p>
+        """,
         unsafe_allow_html=True
     )
 
@@ -49,6 +64,7 @@ if not st.session_state.messages:
 st.markdown(
     """
     <style>
+
     [data-testid="stChatInput"] {
         width: 60%;
         left: 20%;
@@ -59,6 +75,7 @@ st.markdown(
         margin-left: auto;
         margin-right: auto;
     }
+
     </style>
     """,
     unsafe_allow_html=True
@@ -72,6 +89,7 @@ st.markdown(
 for message in st.session_state.messages:
 
     with st.chat_message(message["role"]):
+
         st.write(message["content"])
 
 
@@ -90,7 +108,10 @@ user_input = st.chat_input(
 
 if user_input:
 
-    # Save user's message
+    # --------------------------------------------------
+    # SAVE USER MESSAGE
+    # --------------------------------------------------
+
     st.session_state.messages.append(
         {
             "role": "user",
@@ -114,6 +135,7 @@ if user_input:
                     if message["role"] == "assistant"
                     else "user"
                 ),
+
                 "parts": [
                     {
                         "text": message["content"]
@@ -130,8 +152,11 @@ if user_input:
     with st.spinner("🤝 Bondhu is thinking..."):
 
         result = answer_question(
+
             question=user_input,
+
             conversation_history=gemini_messages[:-1],
+
             system_instruction="""
 You are Bondhu AI, a friendly, helpful and trustworthy AI assistant.
 
@@ -160,24 +185,28 @@ Answer style:
 - Avoid unnecessary technical language.
 - Explain difficult terms in simple Bengali when appropriate.
 - If reliable information cannot be found, say so rather than guessing.
+
+IMPORTANT:
+
+- Never mention internal routing.
+- Never write "ROUTE:" in the answer.
+- Never mention RAG, WEB or GENERAL to the user.
 """
         )
-
-
-    # --------------------------------------------------
-    # ROUTE DIAGNOSTIC
-    # --------------------------------------------------
-
-    st.write("ROUTE:", result["route"])
 
 
     # --------------------------------------------------
     # GET RESPONSE OBJECT
     # --------------------------------------------------
 
-    response = result["response"]
+    response = result.get("response")
 
     if response is None:
+
+        st.error(
+            "Sorry, Bondhu could not generate a response."
+        )
+
         st.stop()
 
 
@@ -185,42 +214,62 @@ Answer style:
     # GET FINAL ANSWER
     # --------------------------------------------------
 
-    final_answer = result.get("answer", "")
+    final_answer = result.get(
+        "answer",
+        ""
+    )
 
     if not final_answer:
+
         final_answer = response.text
 
 
     # --------------------------------------------------
-    # DISPLAY FINAL ANSWER
+    # DISPLAY ASSISTANT RESPONSE
     # --------------------------------------------------
 
-    st.write(final_answer)
+    with st.chat_message("assistant"):
+
+        st.write(final_answer)
 
 
-    # --------------------------------------------------
-    # DISPLAY WEB SOURCES
-    # --------------------------------------------------
+        # --------------------------------------------------
+        # DISPLAY WEB SOURCES
+        # --------------------------------------------------
 
-    if (
-        response.candidates
-        and response.candidates[0].grounding_metadata
-    ):
-
-        st.markdown("### 🔎 Sources")
-
-        for chunk in (
-            response
-            .candidates[0]
-            .grounding_metadata
-            .grounding_chunks
+        if (
+            response.candidates
+            and response.candidates[0].grounding_metadata
         ):
 
-            if chunk.web:
+            grounding_metadata = (
+                response
+                .candidates[0]
+                .grounding_metadata
+            )
 
-                st.markdown(
-                    f"- [{chunk.web.title}]({chunk.web.uri})"
-                )
+            web_chunks = []
+
+            if grounding_metadata.grounding_chunks:
+
+                for chunk in grounding_metadata.grounding_chunks:
+
+                    if chunk.web:
+
+                        web_chunks.append(
+                            chunk.web
+                        )
+
+
+            if web_chunks:
+
+                st.markdown("### 🔎 Sources")
+
+                for web in web_chunks:
+
+                    st.markdown(
+                        f"- [{web.title}]({web.uri})"
+                    )
 
 
     # --------------------------------------------------
