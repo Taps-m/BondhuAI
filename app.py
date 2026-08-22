@@ -332,3 +332,13 @@ For stable general knowledge, answer normally and simply.
             "content": final_answer
         }
     )
+
+
+# --------------------------------------------------
+# FOOTER
+# --------------------------------------------------
+
+st.markdown(
+    '<div class="bondhu-footer">© Tapomoy Das</div>',
+    unsafe_allow_html=True
+)
