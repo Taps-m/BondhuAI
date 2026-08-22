@@ -1,16 +1,98 @@
+/* ==================================================
+   BONDHU AI — RESPONSIVE DESIGN
+   Works across laptop, tablet and mobile
+================================================== */
+
+
+/* --------------------------------------------------
+   CHAT INPUT
+-------------------------------------------------- */
+
+[data-testid="stChatInput"] {
+    width: min(700px, 90vw);
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+
+/* --------------------------------------------------
+   CHAT MESSAGES
+-------------------------------------------------- */
+
+.stChatMessage {
+    width: min(850px, 92vw);
+    max-width: 92vw;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+
+/* --------------------------------------------------
+   WELCOME MESSAGE
+-------------------------------------------------- */
+
+.bondhu-welcome {
+    text-align: center;
+    font-size: clamp(17px, 2vw, 21px);
+    color: #5f6368;
+    margin-top: 30px;
+    padding: 0 15px;
+}
+
+
 /* --------------------------------------------------
    FOOTER
 -------------------------------------------------- */
 
 .bondhu-footer {
     position: fixed;
-    bottom: 12px;
+    bottom: 10px;
     left: 0;
     width: 100%;
     text-align: center;
-    font-size: 15px;
+    font-size: clamp(12px, 1.3vw, 15px);
     font-weight: 500;
     color: #5f6368;
     z-index: 999;
     pointer-events: none;
+    padding: 0 10px;
+}
+
+
+/* --------------------------------------------------
+   MOBILE
+-------------------------------------------------- */
+
+@media (max-width: 600px) {
+
+    [data-testid="stChatInput"] {
+        width: 94vw;
+    }
+
+    .stChatMessage {
+        width: 94vw;
+        max-width: 94vw;
+    }
+
+    .bondhu-footer {
+        bottom: 7px;
+        font-size: 13px;
+    }
+}
+
+
+/* --------------------------------------------------
+   TABLET
+-------------------------------------------------- */
+
+@media (min-width: 601px) and (max-width: 1000px) {
+
+    [data-testid="stChatInput"] {
+        width: 85vw;
+    }
+
+    .stChatMessage {
+        width: 88vw;
+        max-width: 88vw;
+    }
 }
