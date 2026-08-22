@@ -99,7 +99,10 @@ if user_input:
     )
 
 
-    # Convert conversation history to Gemini format
+    # --------------------------------------------------
+    # CONVERT CONVERSATION HISTORY
+    # --------------------------------------------------
+
     gemini_messages = []
 
     for message in st.session_state.messages:
@@ -149,6 +152,11 @@ Core behaviour:
 Answer style:
 
 - Keep answers concise and easy to understand.
+- Answer only what the user asked.
+- For document-based questions, do not list every category,
+  exception, or related detail unless it is necessary to answer
+  the question.
+- Prefer 2–5 short sentences or bullet points.
 - Avoid unnecessary technical language.
 - Explain difficult terms in simple Bengali when appropriate.
 - If reliable information cannot be found, say so rather than guessing.
@@ -164,21 +172,30 @@ Answer style:
 
 
     # --------------------------------------------------
-    # GET RESPONSE
+    # GET RESPONSE OBJECT
     # --------------------------------------------------
 
     response = result["response"]
-
 
     if response is None:
         st.stop()
 
 
     # --------------------------------------------------
-    # DISPLAY ANSWER
+    # GET FINAL ANSWER
     # --------------------------------------------------
 
-    st.write(response.text)
+    final_answer = result.get("answer", "")
+
+    if not final_answer:
+        final_answer = response.text
+
+
+    # --------------------------------------------------
+    # DISPLAY FINAL ANSWER
+    # --------------------------------------------------
+
+    st.write(final_answer)
 
 
     # --------------------------------------------------
@@ -207,12 +224,12 @@ Answer style:
 
 
     # --------------------------------------------------
-    # SAVE ASSISTANT RESPONSE
+    # SAVE FINAL ANSWER
     # --------------------------------------------------
 
     st.session_state.messages.append(
         {
             "role": "assistant",
-            "content": response.text
+            "content": final_answer
         }
     )

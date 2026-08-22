@@ -8,28 +8,26 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-client = genai.Client(
-    api_key=os.getenv("GEMINI_API_KEY"),
-    http_options=types.HttpOptions(
-        timeout=30000,
-        retry_options=types.HttpRetryOptions(
-            attempts=1
-        )
-    )
-)
-
-
 STORE_NAME = "fileSearchStores/bondhu-scheme-knowledge-bas-ctfr29lzsi9o"
 
 
-question = input("Ask a question about Bondhu's knowledge base: ").strip()
+def test_rag_retrieval():
+    """
+    Verify that Bondhu's RAG system can retrieve information
+    from the uploaded knowledge base.
+    """
 
-if not question:
-    print("No question entered.")
-    raise SystemExit
+    client = genai.Client(
+        api_key=os.getenv("GEMINI_API_KEY"),
+        http_options=types.HttpOptions(
+            timeout=30000,
+            retry_options=types.HttpRetryOptions(
+                attempts=1
+            )
+        )
+    )
 
-
-try:
+    question = "What is the exposure limit for ENBM model?"
 
     response = client.models.generate_content(
         model="gemini-3.5-flash",
@@ -52,57 +50,29 @@ try:
         )
     )
 
-except Exception as error:
+    # The API should return a response.
+    assert response is not None
 
-    print("\n========== RAG ERROR ==========\n")
-    print(type(error).__name__)
-    print(error)
-    raise SystemExit
+    # The response should contain candidates.
+    assert response.candidates
 
+    # The response should contain text.
+    assert response.text
 
-print("\n========== ANSWER ==========\n")
-print(response.text)
-
-
-print("\n========== RETRIEVED CONTEXT ==========\n")
-
-
-retrieved_contexts = []
-
-
-if response.candidates:
-
+    # Verify that document retrieval actually happened.
     metadata = response.candidates[0].grounding_metadata
 
-    if metadata and metadata.grounding_chunks:
+    assert metadata is not None
+    assert metadata.grounding_chunks
 
-        for chunk in metadata.grounding_chunks:
+    retrieved_contexts = []
 
-            if chunk.retrieved_context:
+    for chunk in metadata.grounding_chunks:
 
-                context = chunk.retrieved_context
-                retrieved_contexts.append(context)
+        if chunk.retrieved_context:
+            retrieved_contexts.append(
+                chunk.retrieved_context
+            )
 
-                print("DOCUMENT :", context.title)
-                print("PAGE     :", context.page_number)
-                print("STORE    :", context.file_search_store)
-                print("URI      :", context.uri)
-
-                print("\nTEXT:")
-                print(context.text)
-
-                print("\n" + "-" * 60)
-
-
-print("\n========== RAG RESULT ==========\n")
-
-
-if retrieved_contexts:
-
-    print("RAG SUCCESS")
-    print("Retrieved contexts:", len(retrieved_contexts))
-
-else:
-
-    print("RAG FAILED")
-    print("No document context was retrieved.")
+    # At least one document context must be retrieved.
+    assert len(retrieved_contexts) > 0
