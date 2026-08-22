@@ -18,9 +18,9 @@ load_dotenv()
 client = genai.Client(
     api_key=os.getenv("GEMINI_API_KEY"),
     http_options=types.HttpOptions(
-        timeout=120000,
+        timeout=60000,
         retry_options=types.HttpRetryOptions(
-            attempts=2
+            attempts=1
         )
     )
 )
@@ -30,7 +30,10 @@ client = genai.Client(
 # FILE SEARCH STORE
 # ==================================================
 
-STORE_NAME = "fileSearchStores/bondhu-scheme-knowledge-bas-ctfr29lzsi9o"
+STORE_NAME = (
+    "fileSearchStores/"
+    "bondhu-scheme-knowledge-bas-ctfr29lzsi9o"
+)
 
 
 # ==================================================
@@ -45,119 +48,72 @@ def route_question(question):
             model="gemini-3.5-flash",
 
             contents=f"""
-You are the ROUTER of Bondhu AI.
+You are Bondhu AI's routing system.
 
-Your ONLY job is to classify the user's question.
-
-Return EXACTLY ONE WORD:
+Choose exactly ONE route:
 
 RAG
 WEB
 GENERAL
 
-Do NOT explain your choice.
-Do NOT return any other text.
-
---------------------------------------------------
-RAG
---------------------------------------------------
-
-Choose RAG when the user is asking about information
-that should come from Bondhu AI's uploaded documents,
-government scheme documents, banking circulars,
-guidelines, or knowledge base.
+RAG:
+Use when the question is about information that may exist
+inside Bondhu AI's uploaded knowledge base.
 
 Examples:
+- Government schemes
+- Banking schemes
+- Agricultural schemes
+- Welfare schemes
+- Questions about uploaded documents
+- "According to the document..."
+- Eligibility, benefits, amounts or rules contained in documents
 
-"According to the PM-KISAN guidelines..."
-"What does the circular say?"
-"Who is eligible according to the document?"
-"How much loan is allowed according to the circular?"
-"What are the conditions mentioned in the guidelines?"
-
-If the question could reasonably be answered from
-Bondhu's stored documents, prefer RAG.
-
---------------------------------------------------
-WEB
---------------------------------------------------
-
-Choose WEB ONLY when the user needs CURRENT or
-TIME-SENSITIVE information.
+WEB:
+Use when the question requires current information.
 
 Examples:
+- Current RBI repo rate
+- Latest government announcement
+- Current prices
+- Current deadlines
+- Latest news
 
-"What's the weather today?"
-"What is the current RBI repo rate?"
-"What are today's gold prices?"
-"What is the latest government announcement?"
-"Who is the current Chief Minister?"
-"What is the latest news?"
+GENERAL:
+Use for stable general knowledge.
 
---------------------------------------------------
-GENERAL
---------------------------------------------------
-
-Choose GENERAL for:
-
+Examples:
+- Basic science
+- Mathematics
+- General explanations
 - Greetings
 - Casual conversation
-- Thanks
-- Good morning / good evening
-- "How are you?"
-- "What can you do?"
-- General explanations
-- Stable general knowledge
-- Basic mathematics
-- Basic science
-- Writing help
-- Translation
-- Brainstorming
-- Questions that do not require documents or current web data
-
-Examples:
-
-"Hi"
-"Hello"
-"How are you?"
-"Who are you?"
-"Tell me a joke"
-"What is photosynthesis?"
-"Explain inflation"
-"Help me write a letter"
 
 IMPORTANT:
 
-A greeting or casual conversation MUST ALWAYS be GENERAL.
-
---------------------------------------------------
-USER QUESTION
---------------------------------------------------
-
-{question}
-
---------------------------------------------------
-RETURN ONLY:
+Return ONLY:
 
 RAG
+
+or
+
 WEB
+
+or
+
 GENERAL
---------------------------------------------------
+
+User question:
+{question}
 """
         )
 
         route = response.text.strip().upper()
 
-        if "RAG" in route and "WEB" not in route and "GENERAL" not in route:
-            return "RAG"
-
-        if "WEB" in route and "RAG" not in route and "GENERAL" not in route:
-            return "WEB"
-
-        if "GENERAL" in route and "RAG" not in route and "WEB" not in route:
+        if route not in {"RAG", "WEB", "GENERAL"}:
             return "GENERAL"
 
-        return "GENERAL"
+        return route
 
     except Exception as error:
 
@@ -170,71 +126,67 @@ GENERAL
 # RAG ANSWER
 # ==================================================
 
-def answer_with_rag(contents, system_instruction):
+def answer_with_rag(question, system_instruction):
 
     try:
 
-        rag_system_instruction = f"""
+        rag_instruction = f"""
 {system_instruction}
 
-You are Bondhu AI answering from its official
-knowledge-base documents.
+You are answering using Bondhu AI's uploaded knowledge base.
 
-STRICT RULES:
+IMPORTANT:
 
-1. Answer ONLY the user's actual question.
-
-2. Use the retrieved documents as the source of truth.
-
-3. Do NOT use outside knowledge.
-
-4. Do NOT invent information.
-
-5. If the document does not contain the answer,
-say:
-
-"I could not find this information in my
-available documents."
-
-6. If the user asks for a number, amount, date,
-eligibility condition, name, limit or other
-specific fact, give that fact FIRST.
-
-7. Keep answers concise and easy to understand.
-
-8. Prefer 1–4 short sentences or concise bullets.
-
-9. Do not unnecessarily summarize the entire document.
-
-10. Do not add unrelated information.
-
-11. Never mention internal routing.
-12. Never mention RAG, WEB or GENERAL.
+- Use the uploaded documents as the source of truth.
+- Answer ONLY the user's question.
+- Keep the answer concise.
+- Do not summarize unrelated parts of the documents.
+- Do not use outside knowledge.
+- If the documents do not contain the answer, say:
+  "I could not find this information in Bondhu's knowledge base."
 """
 
         response = client.models.generate_content(
             model="gemini-3.5-flash",
 
-            contents=contents,
+            contents=[
+                {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "text": question
+                        }
+                    ]
+                }
+            ],
 
             config=types.GenerateContentConfig(
-                system_instruction=rag_system_instruction,
+                system_instruction=rag_instruction,
 
                 tools=[
                     types.Tool(
                         file_search=types.FileSearch(
-                            file_search_store_names=[STORE_NAME]
+                            file_search_store_names=[
+                                STORE_NAME
+                            ]
                         )
                     )
                 ]
             )
         )
 
+        if response is None:
+            return None, []
+
         retrieved_contexts = []
 
         if response.candidates:
 
-            metadata = response.candidates[0].grounding_metadata
+            metadata = (
+                response
+                .candidates[0]
+                .grounding_metadata
+            )
 
             if metadata and metadata.grounding_chunks:
 
@@ -267,34 +219,13 @@ def answer_with_web(contents, system_instruction):
             google_search=types.GoogleSearch()
         )
 
-        web_system_instruction = f"""
-{system_instruction}
-
-You are Bondhu AI.
-
-Answer the user's question using current web
-information when required.
-
-Rules:
-
-- Give the direct answer first.
-- Keep the response concise.
-- Use current information.
-- Do not invent facts.
-- If current information cannot be verified,
-say so clearly.
-- Never mention internal routing.
-- Never mention RAG, WEB or GENERAL.
-- Never write "ROUTE:".
-"""
-
         response = client.models.generate_content(
             model="gemini-3.5-flash",
 
             contents=contents,
 
             config=types.GenerateContentConfig(
-                system_instruction=web_system_instruction,
+                system_instruction=system_instruction,
                 tools=[grounding_tool]
             )
         )
@@ -316,63 +247,13 @@ def answer_with_general(contents, system_instruction):
 
     try:
 
-        general_system_instruction = f"""
-{system_instruction}
-
-You are Bondhu AI.
-
-You are a friendly assistant for people of Rural Bengal.
-
-IMPORTANT:
-
-- Answer naturally and conversationally.
-- Answer ONLY what the user asks.
-- Never mention routing.
-- Never mention RAG, WEB or GENERAL.
-- Never write "ROUTE:".
-- Never explain your internal systems.
-- Keep simple questions very short.
-- Do not unnecessarily introduce yourself.
-- Do not list your services unless the user asks.
-- Do not explain that Bondhu means friend unless asked.
-- Respond in the user's language.
-
-GREETING RULE:
-
-If the user says only:
-
-Hi
-Hello
-Hey
-Good morning
-Good afternoon
-Good evening
-
-respond with ONLY a short greeting.
-
-For example:
-
-"Hi! I'm Bondhu AI 👋 How can I help you today?"
-
-Do NOT add:
-- a description of Bondhu AI
-- a list of services
-- an explanation of the name Bondhu
-- Bengali instructions
-- unnecessary introductory text
-
-For "How are you?", respond briefly and naturally.
-
-For "What can you do?", explain your capabilities briefly.
-"""
-
         response = client.models.generate_content(
             model="gemini-3.5-flash",
 
             contents=contents,
 
             config=types.GenerateContentConfig(
-                system_instruction=general_system_instruction
+                system_instruction=system_instruction
             )
         )
 
@@ -403,47 +284,6 @@ def answer_question(
 
 
     # ==================================================
-    # DIRECT GREETING HANDLING
-    # ==================================================
-
-    normalized_question = question.strip().lower()
-
-    greetings = {
-        "hi",
-        "hello",
-        "hey",
-        "good morning",
-        "good afternoon",
-        "good evening"
-    }
-
-    if normalized_question in greetings:
-
-        return {
-            "route": "GENERAL",
-            "response": None,
-            "answer": "Hi! I'm Bondhu AI 👋 How can I help you today?",
-            "retrieved_contexts": []
-        }
-
-
-    # ==================================================
-    # BUILD CONVERSATION
-    # ==================================================
-
-    contents = conversation_history + [
-        {
-            "role": "user",
-            "parts": [
-                {
-                    "text": question
-                }
-            ]
-        }
-    ]
-
-
-    # ==================================================
     # ROUTE
     # ==================================================
 
@@ -456,19 +296,8 @@ def answer_question(
 
     if route == "RAG":
 
-        rag_contents = [
-            {
-                "role": "user",
-                "parts": [
-                    {
-                        "text": question
-                    }
-                ]
-            }
-        ]
-
         response, retrieved_contexts = answer_with_rag(
-            rag_contents,
+            question,
             system_instruction
         )
 
@@ -481,27 +310,52 @@ def answer_question(
                 "retrieved_contexts": []
             }
 
+        final_answer = response.text or ""
 
-        try:
 
-            optimized_answer = optimize_answer(
-                question,
-                response.text
-            )
+        # ----------------------------------------------
+        # OPTIMIZE RAG ANSWER
+        # ----------------------------------------------
 
-        except Exception as error:
+        if final_answer:
 
-            handle_api_error(error)
+            try:
 
-            optimized_answer = response.text
+                final_answer = optimize_answer(
+                    question,
+                    final_answer
+                )
+
+            except Exception as error:
+
+                handle_api_error(error)
 
 
         return {
             "route": "RAG",
             "response": response,
-            "answer": optimized_answer,
+            "answer": final_answer,
             "retrieved_contexts": retrieved_contexts
         }
+
+
+    # ==================================================
+    # BUILD CONVERSATION
+    # ==================================================
+
+    contents = conversation_history + [
+
+        {
+            "role": "user",
+
+            "parts": [
+                {
+                    "text": question
+                }
+            ]
+        }
+
+    ]
 
 
     # ==================================================
@@ -527,7 +381,7 @@ def answer_question(
         return {
             "route": "WEB",
             "response": response,
-            "answer": response.text,
+            "answer": response.text or "",
             "retrieved_contexts": []
         }
 
@@ -553,6 +407,6 @@ def answer_question(
     return {
         "route": "GENERAL",
         "response": response,
-        "answer": response.text,
+        "answer": response.text or "",
         "retrieved_contexts": []
     }
