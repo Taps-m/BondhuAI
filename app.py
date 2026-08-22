@@ -2,19 +2,35 @@ import os
 import streamlit as st
 from google import genai
 from dotenv import load_dotenv
-
 from bondhu_orchestrator import answer_question
 
 load_dotenv()
 
-
-# --------------------------------------------------
-# GEMINI CLIENT
-# --------------------------------------------------
-
 client = genai.Client(
     api_key=os.getenv("GEMINI_API_KEY")
 )
+
+
+# --------------------------------------------------
+# PAGE CONFIG
+# --------------------------------------------------
+
+st.set_page_config(
+    page_title="Bondhu AI",
+    page_icon="🤝",
+    layout="centered"
+)
+
+
+# --------------------------------------------------
+# LOAD EXTERNAL CSS
+# --------------------------------------------------
+
+with open("style.css", "r", encoding="utf-8") as f:
+    st.markdown(
+        f"<style>{f.read()}</style>",
+        unsafe_allow_html=True
+    )
 
 
 # --------------------------------------------------
@@ -30,9 +46,7 @@ if "messages" not in st.session_state:
 # --------------------------------------------------
 
 if st.button("🧹 Clear Chat"):
-
     st.session_state.messages = []
-
     st.rerun()
 
 
@@ -48,38 +62,14 @@ if not st.session_state.messages:
             text-align: center;
             font-size: 20px;
             color: #5f6368;
+            margin-top: 30px;
         ">
-            Hi! I'm Bondhu AI 👋<br>
-            How can I help you today?
+        Hi! I'm Bondhu AI 👋<br>
+        How can I help you today?
         </p>
         """,
         unsafe_allow_html=True
     )
-
-
-# --------------------------------------------------
-# CHAT UI STYLING
-# --------------------------------------------------
-
-st.markdown(
-    """
-    <style>
-
-    [data-testid="stChatInput"] {
-        width: 60%;
-        left: 20%;
-    }
-
-    .stChatMessage {
-        max-width: 75%;
-        margin-left: auto;
-        margin-right: auto;
-    }
-
-    </style>
-    """,
-    unsafe_allow_html=True
-)
 
 
 # --------------------------------------------------
@@ -121,7 +111,7 @@ if user_input:
 
 
     # --------------------------------------------------
-    # CONVERT CONVERSATION HISTORY
+    # CONVERT CONVERSATION HISTORY FOR GEMINI
     # --------------------------------------------------
 
     gemini_messages = []
@@ -135,7 +125,6 @@ if user_input:
                     if message["role"] == "assistant"
                     else "user"
                 ),
-
                 "parts": [
                     {
                         "text": message["content"]
@@ -152,7 +141,6 @@ if user_input:
     with st.spinner("🤝 Bondhu is thinking..."):
 
         result = answer_question(
-
             question=user_input,
 
             conversation_history=gemini_messages[:-1],
@@ -166,7 +154,7 @@ Bondhu is primarily designed to help rural people of Bengal,
 especially farmers and people who need information about government
 schemes, agricultural support, banking services and public welfare.
 
-Core behaviour:
+CORE BEHAVIOUR:
 
 - Understand the user's actual intent before answering.
 - Answer directly and simply.
@@ -174,40 +162,78 @@ Core behaviour:
 - Maintain conversation context.
 - Do not invent facts, schemes, amounts, eligibility criteria or deadlines.
 
-Answer style:
+ANSWER STYLE:
 
 - Keep answers concise and easy to understand.
 - Answer only what the user asked.
-- For document-based questions, do not list every category,
-  exception, or related detail unless it is necessary to answer
-  the question.
 - Prefer 2–5 short sentences or bullet points.
 - Avoid unnecessary technical language.
 - Explain difficult terms in simple Bengali when appropriate.
 - If reliable information cannot be found, say so rather than guessing.
 
-IMPORTANT:
+GREETING BEHAVIOUR:
 
-- Never mention internal routing.
-- Never write "ROUTE:" in the answer.
-- Never mention RAG, WEB or GENERAL to the user.
+If the user simply says:
+- Hi
+- Hello
+- Hey
+- Good morning
+- Good evening
+- Namaste
+
+respond naturally and briefly.
+
+Do not provide information about schemes, farming, banking,
+or other topics unless the user asks for them.
+
+Do not repeat the full Bondhu AI introduction every time.
+
+For example:
+
+User: Hi
+
+Bondhu:
+Hi! 👋 I'm Bondhu AI.
+How can I help you today?
+
+DOCUMENT QUESTIONS:
+
+When answering from Bondhu's knowledge base:
+
+- Use the retrieved documents as the source of truth.
+- Answer only the specific question.
+- Do not provide unnecessary related information.
+- Do not use outside knowledge.
+
+CURRENT INFORMATION:
+
+When current information is required, use web search.
+
+GENERAL QUESTIONS:
+
+For stable general knowledge, answer normally and simply.
 """
         )
 
 
     # --------------------------------------------------
-    # GET RESPONSE OBJECT
+    # SAFETY CHECK
     # --------------------------------------------------
 
-    response = result.get("response")
-
-    if response is None:
+    if result is None:
 
         st.error(
             "Sorry, Bondhu could not generate a response."
         )
 
         st.stop()
+
+
+    # --------------------------------------------------
+    # GET RESPONSE
+    # --------------------------------------------------
+
+    response = result.get("response")
 
 
     # --------------------------------------------------
@@ -219,13 +245,27 @@ IMPORTANT:
         ""
     )
 
-    if not final_answer:
+
+    if not final_answer and response is not None:
 
         final_answer = response.text
 
 
     # --------------------------------------------------
-    # DISPLAY ASSISTANT RESPONSE
+    # IF NO ANSWER
+    # --------------------------------------------------
+
+    if not final_answer:
+
+        st.error(
+            "Sorry, Bondhu could not generate a response."
+        )
+
+        st.stop()
+
+
+    # --------------------------------------------------
+    # DISPLAY ANSWER
     # --------------------------------------------------
 
     with st.chat_message("assistant"):
@@ -237,43 +277,53 @@ IMPORTANT:
         # DISPLAY WEB SOURCES
         # --------------------------------------------------
 
-        if (
-            response.candidates
-            and response.candidates[0].grounding_metadata
-        ):
+        if response is not None:
 
-            grounding_metadata = (
-                response
-                .candidates[0]
-                .grounding_metadata
-            )
+            if (
+                response.candidates
+                and response.candidates[0].grounding_metadata
+            ):
 
-            web_chunks = []
+                grounding_metadata = (
+                    response
+                    .candidates[0]
+                    .grounding_metadata
+                )
 
-            if grounding_metadata.grounding_chunks:
 
-                for chunk in grounding_metadata.grounding_chunks:
+                if grounding_metadata.grounding_chunks:
 
-                    if chunk.web:
+                    web_sources = []
 
-                        web_chunks.append(
-                            chunk.web
+                    for chunk in grounding_metadata.grounding_chunks:
+
+                        if chunk.web:
+
+                            title = chunk.web.title
+                            uri = chunk.web.uri
+
+                            if uri:
+
+                                web_sources.append(
+                                    (title, uri)
+                                )
+
+
+                    if web_sources:
+
+                        st.markdown(
+                            "### 🔎 Sources"
                         )
 
+                        for title, uri in web_sources:
 
-            if web_chunks:
-
-                st.markdown("### 🔎 Sources")
-
-                for web in web_chunks:
-
-                    st.markdown(
-                        f"- [{web.title}]({web.uri})"
-                    )
+                            st.markdown(
+                                f"- [{title}]({uri})"
+                            )
 
 
     # --------------------------------------------------
-    # SAVE FINAL ANSWER
+    # SAVE ASSISTANT ANSWER
     # --------------------------------------------------
 
     st.session_state.messages.append(
