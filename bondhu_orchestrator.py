@@ -32,7 +32,7 @@ client = genai.Client(
 
 STORE_NAME = (
     "fileSearchStores/"
-    "bondhu-scheme-knowledge-bas-ctfr29lzsi9o"
+    "bondhu-ai-knowledge-base-20-5t18sh18ptv9"
 )
 
 
