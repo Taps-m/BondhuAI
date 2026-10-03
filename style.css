@@ -181,3 +181,20 @@ button:focus-visible, input:focus-visible, a:focus-visible, summary:focus-visibl
   .st-key-bondhu_header [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
   .st-key-bondhu_header [data-testid="stColumn"] { flex-basis: 100%; }
 }
+/* Fit the desktop welcome screen without cropping artwork or overlaying the footer. */
+@media (min-width: 761px) {
+  [data-testid="stMainBlockContainer"] { padding-top: 1rem; padding-bottom: .5rem; }
+  .st-key-bondhu_header { padding-top: 10px; padding-bottom: 10px; }
+  .bondhu-welcome { min-height: 0; }
+  .welcome-art { height: clamp(160px, 30dvh, 280px); }
+  .welcome-art img { height: 100%; width: 100%; object-fit: contain; }
+  .welcome-copy { padding: 8px 0 8px 10px; }
+  .bondhu-welcome h1 { font-size: clamp(30px, 3vw, 46px); padding: 6px 0; }
+  .welcome-accent { margin: 4px 0 10px; }
+  .bondhu-welcome p { font-size: 15px; line-height: 1.55; }
+  .st-key-bondhu_chat_history { gap: 10px; }
+  .st-key-bondhu_suggestions [data-testid="stColumn"] { padding: 8px 12px; }
+  .st-key-bondhu_suggestions button p { white-space: normal; overflow: visible; text-overflow: clip; }
+  .st-key-bondhu_composer { padding-top: 2px; gap: 10px; }
+  .bondhu-page-footer { padding-top: 8px; padding-bottom: 4px; }
+}
