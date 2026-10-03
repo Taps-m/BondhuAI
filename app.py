@@ -1,4 +1,6 @@
 import os
+import base64
+from pathlib import Path
 from html import escape
 from urllib.parse import urlsplit
 
@@ -21,6 +23,13 @@ for name, default in (("messages", []), ("voice_answer_ready", None), ("voice_se
                       ("input_mode", "text"), ("bondhu_input_method", "⌨️ Type")):
     if name not in st.session_state:
         st.session_state[name] = default
+
+
+@st.cache_data
+def welcome_image():
+    image = Path(__file__).resolve().parent / "assets" / "bondhu-reference-clean.png"
+    return base64.b64encode(image.read_bytes()).decode("ascii")
+
 
 
 def submit_suggestion(question):
@@ -154,32 +163,23 @@ with st.sidebar:
             st.markdown("#### এই আলোচনার প্রশ্ন" if bengali else "#### In this conversation")
             for question in questions[-5:]:
                 st.caption(question)
-    st.markdown('<div class="sidebar-footer">Bondhu AI · 2026 © Tapomoy Das</div>', unsafe_allow_html=True)
-    with st.container(key="bondhu_visitor_identity"):
-        visitor_count = unique_visitor_count()
-    count_text = f"{visitor_count:,}" if visitor_count is not None else "—"
-    if bengali:
-        count_text = count_text.translate(str.maketrans("0123456789", "০১২৩৪৫৬৭৮৯"))
-    st.markdown(
-        '<div class="visitor-count"><span>'
-        + ("অনন্য দর্শনার্থী" if bengali else "Unique visitors")
-        + f'</span><strong>{count_text}</strong></div>', unsafe_allow_html=True
-    )
 
 # One stable container keeps additions to chat history from remounting the recorder.
 chat_area = st.container(key="bondhu_chat_history")
 with chat_area:
     if not st.session_state.messages:
+        heading = "জানতে চান?<br><span class='welcome-highlight'>বন্ধুকে বলুন।</span>" if bengali else "Have a question?<br><span class='welcome-highlight'>Ask Bondhu.</span>"
+        introduction = ("কঠিন নিয়ম, সহজ ভাষায়। আপনার প্রশ্ন বলুন বা লিখুন—বন্ধু বুঝিয়ে বলবে।" if bengali else
+                        "Make sense of the details. Speak or type your question—Bondhu will explain it simply.")
         st.markdown(
-            '<div class="bondhu-welcome"><div class="bondhu-eyebrow">'
+            '<section class="bondhu-welcome"><div class="welcome-copy"><div class="bondhu-eyebrow">'
             + ("সরকারি প্রকল্প · কৃষি · ব্যাংকিং" if bengali else "SCHEMES · FARMING · BANKING")
-            + '</div><h1>' + ("জানতে চান? বন্ধুকে বলুন।" if bengali else "A question? Ask Bondhu.")
-            + '</h1><p>' + ("কঠিন নিয়ম, সহজ ভাষায়। আপনার প্রশ্ন বলুন বা লিখুন—বন্ধু বুঝিয়ে বলবে।" if bengali else
-              "Make sense of the details. Speak or type your question—Bondhu will explain it simply.")
-            + '</p></div>', unsafe_allow_html=True
+            + f'</div><h1>{heading}</h1><div class="welcome-accent"></div><p>{introduction}</p></div>'
+            + '<div class="welcome-art"><img alt="" src="data:image/png;base64,' + welcome_image() + '">'
+            + '</div></section>', unsafe_allow_html=True
         )
         if st.session_state.bondhu_input_method == "⌨️ Type":
-            st.markdown('<div class="suggestions-label">' + ("অথবা এই প্রশ্ন দিয়ে শুরু করুন" if bengali else "Or start with a question") + '</div>', unsafe_allow_html=True)
+            st.markdown('<div class="suggestions-label">' + ("জনপ্রিয় প্রশ্নসমূহ" if bengali else "Popular questions") + '</div>', unsafe_allow_html=True)
             with st.container(key="bondhu_suggestions"):
                 columns = st.columns(3)
                 for index, ((title, question), column) in enumerate(zip(examples, columns)):
@@ -220,6 +220,19 @@ with st.container(key="bondhu_composer"):
                 except Exception as error:
                     st.error("কথাটি বোঝা যায়নি। আবার চেষ্টা করুন অথবা লিখে পাঠান।" if bengali else "I couldn't understand the recording. Please try again or type your question.")
                     user_input = None
+
+
+with st.container(key="bondhu_visitor_identity"):
+    visitor_count = unique_visitor_count()
+count_text = f"{visitor_count:,}" if visitor_count is not None else "—"
+if bengali:
+    count_text = count_text.translate(str.maketrans("0123456789", "০১২৩৪৫৬৭৮৯"))
+with st.container(key="bondhu_page_footer"):
+    st.markdown(
+        '<footer class="bondhu-page-footer"><strong>Bondhu AI · 2026 © Tapomoy Das</strong>'
+        '<span>' + ("অনন্য দর্শনার্থী" if bengali else "Unique visitors")
+        + f' · <strong>{count_text}</strong></span></footer>', unsafe_allow_html=True
+    )
 
 
 # ==================================================

@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Bondhu Voice</title>
+
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: "Segoe UI", Arial, sans-serif; color: #173555; padding: 2px; margin: 0; background: transparent; }
+        .voice-panel { padding: 24px; background: #fff; border: 1px solid #d5dfec; border-top: 4px solid #174b85; border-radius: 12px; }
+        .voice-heading { color: #65778f; font-size: 12px; font-weight: 700; letter-spacing: 1px; margin-bottom: 20px; }
+        .voice-main { display: flex; align-items: center; gap: 18px; }
+        .mic { flex-shrink: 0; width: 54px; height: 54px; border-radius: 50%; background: #eaf1fc; color: #174b85; display: grid; place-items: center; }
+        .mic svg { width: 26px; height: 26px; }
+        #status { font-size: 19px; font-weight: 650; line-height: 1.6; }
+        #hint { color: #65778f; font-size: 14px; line-height: 1.7; margin-top: 5px; max-width: 570px; }
+        .voice-bottom { margin-top: 20px; padding-top: 16px; border-top: 1px solid #e6ebf2; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+        #timer { font-size: 23px; font-weight: 700; font-variant-numeric: tabular-nums; }
+        #timer-label { color: #65778f; font-size: 12px; margin-left: 7px; }
+        button { padding: 10px 18px; min-height: 44px; border-radius: 8px; font: inherit; font-size: 14px; cursor: pointer; }
+        #end { background: white; border: 1px solid #d3ddeb; color: #344c6d; }
+        #restart { background: #174b85; border: 1px solid #174b85; color: white; }
+        button:hover { filter: brightness(.94); }
+        button:disabled { cursor: wait; opacity: .5; }
+        button:focus-visible { outline: 3px solid #df293e; outline-offset: 3px; }
+        [hidden] { display: none !important; }
+        body[data-phase="listening"] .mic { box-shadow: 0 0 0 6px #eaf1fc80; }
+        body[data-phase="ended"] .mic { background: #f0f3f7; color: #7a899b; }
+        body[data-phase="error"] .mic { background: #fff0f2; color: #b62132; }
+        @media (max-width: 480px) { .voice-panel { padding: 18px; } .voice-main { align-items: flex-start; gap: 12px; } #status { font-size: 17px; } .mic { width: 44px; height: 44px; } .voice-bottom { flex-wrap: wrap; } }
+    </style>
+
+</head>
+
+
+<body>
+
+    <section class="voice-panel" aria-label="Voice conversation">
+        <div class="voice-heading" id="heading">TALK TO BONDHU</div>
+        <div class="voice-main">
+            <div class="mic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg></div>
+            <div><div id="status" role="status" aria-live="polite">Connecting microphone…</div><div id="hint">Allow microphone access when your browser asks.</div></div>
+        </div>
+        <div class="voice-bottom">
+            <div><span id="timer">00:00</span><span id="timer-label">Recording time</span></div>
+            <button id="end" type="button">End conversation</button>
+            <button id="restart" type="button" hidden>Start again</button>
+        </div>
+    </section>
+
+<script>
+
+
+// ==================================================
+// SETTINGS
+// ==================================================
+
+const START_BUFFER = 3000;
+
+// User stops speaking → wait 2 seconds
+const SILENCE_DURATION = 2000;
+
+// Maximum duration of one question
+const MAX_RECORDING_TIME = 60000;
+
+// After an answer is displayed,
+// user has 10 seconds to START next question
+const NEXT_QUESTION_TIMEOUT = 10000;
+
+// Microphone sensitivity
+const SILENCE_THRESHOLD = 0.015;
+
+
+// ==================================================
+// STATE
+// ==================================================
+
+let mediaRecorder = null;
+
+let audioChunks = [];
+
+let audioContext = null;
+
+let analyser = null;
+
+let microphone = null;
+
+let silenceStart = null;
+
+let recordingStart = null;
+
+let speechDetected = false;
+
+let isRecording = false;
+
+let audioSent = false;
+
+let waitingForStreamlit = false;
+
+let sessionEnded = false;
+
+let firstQuestion = true;
+
+let recordingId = null;
+let displayedAnswer = null;
+let displayCheck = null;
+let startingRecording = false;
+let speechStart = null;
+let initialized = false;
+let uiLanguage = "en";
+let currentStatus = "Connecting microphone…";
+
+let nextQuestionWaiting = false;
+
+let nextQuestionDeadline = null;
+
+let animationFrame = null;
+
+let timerInterval = null;
+
+
+// ==================================================
+// ELEMENTS
+// ==================================================
+
+const status =
+    document.getElementById("status");
+
+const timer =
+    document.getElementById("timer");
+
+
+const hint = document.getElementById("hint");
+const endButton = document.getElementById("end");
+const restartButton = document.getElementById("restart");
+const timerLabel = document.getElementById("timer-label");
+const labels = {
+    "Connecting microphone…": ["মাইক্রোফোন চালু হচ্ছে…", "Allow microphone access when your browser asks.", "ব্রাউজার অনুমতি চাইলে মাইক্রোফোনের অনুমতি দিন।", "connecting"],
+    "🎙️ Speak normally.": ["বলুন, আমি শুনছি", "Take your time. Pause for 2 seconds when you finish your question.", "সময় নিয়ে প্রশ্ন করুন। বলা শেষ হলে ২ সেকেন্ড চুপ থাকুন।", "listening"],
+    "🎙️ Listening...": ["আপনার কথা শুনছি…", "Pause for 2 seconds when you finish. Your question will be sent automatically.", "বলা শেষ হলে ২ সেকেন্ড চুপ থাকুন। প্রশ্নটি নিজে থেকেই পাঠানো হবে।", "listening"],
+    "🤫 Speech finished...": ["আপনার প্রশ্ন পাঠানো হচ্ছে…", "You can relax while Bondhu prepares your answer.", "বন্ধু আপনার উত্তর তৈরি করছে, একটু অপেক্ষা করুন।", "processing"],
+    "⏳ Processing voice...": ["বন্ধু আপনার উত্তর তৈরি করছে…", "Your microphone is paused. The next turn starts after the full answer appears.", "মাইক্রোফোন বন্ধ আছে। পুরো উত্তর দেখানোর পরে আবার কথা বলতে পারবেন।", "processing"],
+    "🎙️ Ask your next question.": ["আর কিছু জানতে চান?", "Start speaking before the countdown ends, or let the conversation finish.", "সময় শেষ হওয়ার আগে পরের প্রশ্নটি বলুন। চুপ থাকলে আলোচনা শেষ হবে।", "countdown"],
+    "👋 Voice session ended.": ["আলোচনা শেষ হয়েছে", "Your microphone is off. Start again whenever you are ready.", "মাইক্রোফোন বন্ধ আছে। চাইলে আবার শুরু করুন।", "ended"],
+    "❌ Microphone access was denied or unavailable.": ["মাইক্রোফোন চালু করা যায়নি", "Allow microphone access in your browser and device settings, then try again.", "ব্রাউজার ও ডিভাইসের সেটিংসে মাইক্রোফোনের অনুমতি দিয়ে আবার চেষ্টা করুন।", "error"],
+    "❌ Voice recording is not supported.": ["এই ব্রাউজারে রেকর্ডিং করা যাচ্ছে না", "Try a browser that supports microphone recording, or type your question.", "অন্য ব্রাউজার ব্যবহার করুন অথবা প্রশ্ন লিখে পাঠান।", "error"],
+    "🎙️ No speech detected.": ["কথা শোনা যায়নি", "Start again and speak a little closer to your microphone.", "আবার শুরু করে মাইক্রোফোনের একটু কাছে কথা বলুন।", "ended"]
+};
+function setStatus(key) {
+    currentStatus = key;
+    const entry = labels[key];
+    const bn = uiLanguage === "bn";
+    const text = bn ? entry[0] : key.replace(/^[^A-Za-z]+/, "");
+    if (status.innerText !== text) status.innerText = text;
+    hint.innerText = entry[bn ? 2 : 1];
+    document.body.dataset.phase = entry[3];
+    timer.hidden = !["listening", "countdown"].includes(entry[3]);
+    timerLabel.innerText = entry[3] === "countdown" ? (bn ? "বাকি সময়" : "to start speaking") : (bn ? "রেকর্ডিং সময়" : "Recording time");
+    timerLabel.hidden = timer.hidden;
+    endButton.hidden = sessionEnded;
+    restartButton.hidden = !sessionEnded;
+    restartButton.disabled = startingRecording || isRecording;
+}
+function localize() {
+    document.documentElement.lang = uiLanguage;
+    document.getElementById("heading").innerText = uiLanguage === "bn" ? "বন্ধুর সাথে কথা বলুন" : "TALK TO BONDHU";
+    endButton.innerText = uiLanguage === "bn" ? "আলোচনা শেষ করুন" : "End conversation";
+    restartButton.innerText = uiLanguage === "bn" ? "আবার শুরু করুন" : "Start again";
+    setStatus(currentStatus);
+}
+endButton.addEventListener("click", () => endSession());
+restartButton.addEventListener("click", () => {
+    if (startingRecording || isRecording) return;
+    sessionEnded = false;
+    firstQuestion = true;
+    waitingForStreamlit = false;
+    nextQuestionDeadline = null;
+    nextQuestionWaiting = false;
+    setStatus("Connecting microphone…");
+    startRecording();
+});
+
+// ==================================================
+// STREAMLIT MESSAGE
+// ==================================================
+
+function sendMessage(type, data = {}) {
+
+    window.parent.postMessage(
+        {
+            isStreamlitMessage: true,
+            type: type,
+            ...data
+        },
+        "*"
+    );
+
+}
+
+
+// ==================================================
+// COMPONENT READY
+// ==================================================
+
+function componentReady() {
+
+    sendMessage(
+        "streamlit:componentReady",
+        {
+            apiVersion: 1
+        }
+    );
+
+}
+
+
+// ==================================================
+// FRAME HEIGHT
+// ==================================================
+
+function updateHeight() {
+
+    sendMessage(
+        "streamlit:setFrameHeight",
+        {
+            height: document.body.scrollHeight
+        }
+    );
+
+}
+
+
+// ==================================================
+// SEND VALUE
+// ==================================================
+
+function sendValueToStreamlit(value) {
+
+    sendMessage(
+        "streamlit:setComponentValue",
+        {
+            value: value
+        }
+    );
+
+}
+
+
+// ==================================================
+// SEND AUDIO
+// ==================================================
+
+function sendAudioToStreamlit(blob) {
+
+    if (audioSent) {
+        return;
+    }
+
+    audioSent = true;
+
+    waitingForStreamlit = true;
+
+
+    const reader =
+        new FileReader();
+
+
+    reader.onloadend =
+        function () {
+
+            const result =
+                reader.result;
+
+
+            const base64Audio =
+                result.split(",")[1];
+
+
+            sendValueToStreamlit(
+                {type: "audio", id: recordingId, audio: base64Audio}
+            );
+
+        };
+
+
+    reader.readAsDataURL(blob);
+
+}
+
+
+// ==================================================
+// START RECORDING
+// ==================================================
+
+async function startRecording() {
+
+    if (
+        startingRecording ||
+        isRecording ||
+        sessionEnded ||
+        waitingForStreamlit
+    ) {
+        return;
+    }
+
+
+    startingRecording = true;
+    try {
+
+        setStatus("Connecting microphone…");
+
+
+        const stream =
+            await navigator.mediaDevices.getUserMedia(
+                {
+                    audio: true
+                }
+            );
+
+
+        if (sessionEnded) {
+            stream.getTracks().forEach(track => track.stop());
+            return;
+        }
+        if (!window.MediaRecorder) {
+
+            setStatus("❌ Voice recording is not supported.");
+
+            stream
+                .getTracks()
+                .forEach(
+                    track => track.stop()
+                );
+
+            endSession();
+
+            return;
+        }
+
+
+        mediaRecorder =
+            new MediaRecorder(stream);
+
+
+        audioChunks = [];
+
+        audioSent = false;
+
+        speechDetected = false;
+        speechStart = null;
+        recordingId = crypto.randomUUID();
+
+        silenceStart = null;
+
+        recordingStart =
+            Date.now();
+
+        isRecording = true;
+        setStatus(firstQuestion ? "🎙️ Speak normally." : "🎙️ Ask your next question.");
+        if (!firstQuestion) {
+            nextQuestionDeadline = Date.now() + NEXT_QUESTION_TIMEOUT;
+            timer.innerText = "00:10";
+        }
+
+
+        // --------------------------------------------------
+        // AUDIO DATA
+        // --------------------------------------------------
+
+        mediaRecorder.ondataavailable =
+            function (event) {
+
+                if (
+                    event.data &&
+                    event.data.size > 0
+                ) {
+
+                    audioChunks.push(
+                        event.data
+                    );
+
+                }
+
+            };
+
+
+        // --------------------------------------------------
+        // RECORDING STOP
+        // --------------------------------------------------
+
+        mediaRecorder.onstop =
+            function () {
+
+                const mimeType =
+                    mediaRecorder.mimeType ||
+                    "audio/webm";
+
+
+                const audioBlob =
+                    new Blob(
+                        audioChunks,
+                        {
+                            type: mimeType
+                        }
+                    );
+
+
+                stream
+                    .getTracks()
+                    .forEach(
+                        track =>
+                            track.stop()
+                    );
+
+
+                if (audioContext) {
+
+                    audioContext.close();
+
+                    audioContext = null;
+
+                }
+
+
+                clearInterval(
+                    timerInterval
+                );
+
+                timerInterval = null;
+
+
+                isRecording = false;
+                restartButton.disabled = startingRecording;
+
+
+                timer.innerText =
+                    "00:00";
+
+
+                if (
+                    audioBlob.size > 0 &&
+                    !sessionEnded
+                ) {
+
+                    setStatus("⏳ Processing voice...");
+
+
+                    sendAudioToStreamlit(
+                        audioBlob
+                    );
+
+                }
+                else {
+
+                    if (!sessionEnded) {
+
+                        setStatus("🎙️ No speech detected.");
+
+                    }
+
+                }
+
+
+                updateHeight();
+
+            };
+
+
+        mediaRecorder.start();
+
+
+        // --------------------------------------------------
+        // TIMER
+        // --------------------------------------------------
+
+        timerInterval =
+            setInterval(
+                updateRecordingTimer,
+                100
+            );
+
+
+        startSilenceDetection(
+            stream
+        );
+
+    }
+
+    catch (error) {
+
+        console.error(
+            "Microphone error:",
+            error
+        );
+
+
+        setStatus("❌ Microphone access was denied or unavailable.");
+
+
+        isRecording = false;
+        endSession();
+        setStatus("❌ Microphone access was denied or unavailable.");
+
+    } finally {
+        startingRecording = false;
+        restartButton.disabled = isRecording;
+        updateHeight();
+    }
+
+}
+
+
+// ==================================================
+// SILENCE DETECTION
+// ==================================================
+
+function startSilenceDetection(stream) {
+
+    audioContext =
+        new (
+            window.AudioContext ||
+            window.webkitAudioContext
+        )();
+
+
+    analyser =
+        audioContext.createAnalyser();
+
+
+    analyser.fftSize =
+        2048;
+
+
+    microphone =
+        audioContext.createMediaStreamSource(
+            stream
+        );
+
+
+    microphone.connect(
+        analyser
+    );
+
+
+    const data =
+        new Uint8Array(
+            analyser.fftSize
+        );
+
+
+    function checkAudio() {
+
+        if (!isRecording) {
+            return;
+        }
+
+
+        const elapsed =
+            Date.now() -
+            recordingStart;
+
+
+        // --------------------------------------------------
+        // MAX QUESTION LENGTH
+        // --------------------------------------------------
+
+        if (
+            speechDetected && Date.now() - speechStart >=
+            MAX_RECORDING_TIME
+        ) {
+
+            stopRecording();
+
+            return;
+
+        }
+
+
+        // --------------------------------------------------
+        // AUDIO ANALYSIS
+        // --------------------------------------------------
+
+        analyser.getByteTimeDomainData(
+            data
+        );
+
+
+        let sum = 0;
+
+
+        for (
+            let i = 0;
+            i < data.length;
+            i++
+        ) {
+
+            const value =
+                (data[i] - 128) /
+                128;
+
+
+            sum +=
+                value * value;
+
+        }
+
+
+        const rms =
+            Math.sqrt(
+                sum / data.length
+            );
+
+
+        // --------------------------------------------------
+        // SPEECH
+        // --------------------------------------------------
+
+        if (
+            rms >
+            SILENCE_THRESHOLD
+        ) {
+
+            if (!speechDetected) speechStart = Date.now();
+            speechDetected = true;
+
+            silenceStart = null;
+
+            setStatus("🎙️ Listening...");
+
+
+            // Once speech starts,
+            // the next-question countdown is irrelevant.
+            nextQuestionWaiting = false;
+
+            nextQuestionDeadline = null;
+
+            updateRecordingTimer();
+
+        }
+
+
+        // --------------------------------------------------
+        // SILENCE
+        // --------------------------------------------------
+
+        else {
+
+            // ----------------------------------------------
+            // USER HAS NOT SPOKEN YET
+            // ----------------------------------------------
+
+            if (!speechDetected) {
+
+                // FIRST QUESTION:
+                // No timeout.
+                if (firstQuestion) {
+
+                    setStatus("🎙️ Speak normally.");
+
+                    timer.innerText =
+                        "00:00";
+
+                }
+
+                // NEXT QUESTIONS:
+                // 10-second timeout.
+                else {
+
+                    const remaining =
+                        Math.max(
+                            0,
+                            Math.ceil(
+                                (
+                                    nextQuestionDeadline -
+                                    Date.now()
+                                ) / 1000
+                            )
+                        );
+
+
+                    setStatus("🎙️ Ask your next question.");
+
+
+                    timer.innerText =
+                        `00:${String(
+                            remaining
+                        ).padStart(2, "0")}`;
+
+
+                    if (
+                        Date.now() >=
+                        nextQuestionDeadline
+                    ) {
+
+                        endSession();
+
+                        return;
+
+                    }
+
+                }
+
+            }
+
+            // ----------------------------------------------
+            // USER HAS SPOKEN
+            // ----------------------------------------------
+
+            else {
+
+                if (
+                    silenceStart === null
+                ) {
+
+                    silenceStart =
+                        Date.now();
+
+                }
+
+
+                const silenceTime =
+                    Date.now() -
+                    silenceStart;
+
+
+                setStatus("🎙️ Listening...");
+
+
+                // ------------------------------------------
+                // 2 SECONDS SILENCE
+                // ------------------------------------------
+
+                if (
+                    silenceTime >=
+                    SILENCE_DURATION
+                ) {
+
+                    setStatus("🤫 Speech finished...");
+
+
+                    stopRecording();
+
+                    return;
+
+                }
+
+            }
+
+        }
+
+
+        animationFrame =
+            requestAnimationFrame(
+                checkAudio
+            );
+
+    }
+
+
+    checkAudio();
+
+}
+
+
+// ==================================================
+// STOP RECORDING
+// ==================================================
+
+function stopRecording() {
+
+    if (
+        mediaRecorder &&
+        mediaRecorder.state !== "inactive"
+    ) {
+
+        mediaRecorder.stop();
+
+    }
+
+
+    clearInterval(
+        timerInterval
+    );
+
+}
+
+
+// ==================================================
+// RECORDING TIMER
+// ==================================================
+
+function updateRecordingTimer() {
+
+    if (
+        !recordingStart ||
+        !isRecording
+    ) {
+        return;
+    }
+
+
+    // Show recording time after speech starts, for every question.
+    if (speechDetected) {
+
+        const elapsed =
+            Math.floor(
+                (
+                    Date.now() -
+                    speechStart
+                ) / 1000
+            );
+
+
+        const minutes =
+            String(
+                Math.floor(
+                    elapsed / 60
+                )
+            ).padStart(
+                2,
+                "0"
+            );
+
+
+        const seconds =
+            String(
+                elapsed % 60
+            ).padStart(
+                2,
+                "0"
+            );
+
+
+        timer.innerText =
+            `${minutes}:${seconds}`;
+
+    }
+
+}
+
+
+// ==================================================
+// ANSWER COMPLETE
+// ==================================================
+
+function answerCompleted() {
+
+    if (sessionEnded) {
+        return;
+    }
+
+
+    sendValueToStreamlit({type: "answer_displayed", id: displayedAnswer});
+
+
+    waitingForStreamlit = false;
+
+    audioSent = false;
+
+
+    // ----------------------------------------------
+    // FIRST ANSWER COMPLETED
+    // ----------------------------------------------
+
+    if (firstQuestion) {
+
+        firstQuestion = false;
+
+    }
+
+
+    // ----------------------------------------------
+    // START NEXT QUESTION WINDOW
+    // ----------------------------------------------
+
+    startNextQuestionWindow();
+
+}
+
+
+// ==================================================
+// NEXT QUESTION WINDOW
+// ==================================================
+
+function startNextQuestionWindow() {
+
+    if (sessionEnded) {
+        return;
+    }
+
+
+    nextQuestionWaiting = true;
+
+
+    nextQuestionDeadline = null;
+
+
+    setStatus("🎙️ Ask your next question.");
+
+
+    timer.innerText =
+        "00:10";
+
+
+    updateHeight();
+
+
+    // Start microphone immediately.
+    startRecording();
+
+}
+
+
+// ==================================================
+// STREAMLIT RENDER
+// ==================================================
+
+window.addEventListener(
+    "message",
+    function (event) {
+
+        if (
+            !event.data
+        ) {
+            return;
+        }
+
+
+        // --------------------------------------------------
+        // STREAMLIT RENDER
+        // --------------------------------------------------
+
+        if (
+            event.data.type ===
+            "streamlit:render"
+        ) {
+
+            const requestedLanguage = event.data.args && event.data.args.language === "bn" ? "bn" : "en";
+            if (!initialized || requestedLanguage !== uiLanguage) {
+                uiLanguage = requestedLanguage;
+                localize();
+                updateHeight();
+            }
+            if (!initialized) {
+                initialized = true;
+                startRecording();
+            }
+            const token = event.data.args && event.data.args.answer_ready;
+            if (token && waitingForStreamlit && token === recordingId &&
+                displayedAnswer !== token && !displayCheck) {
+                // Require the specific completed answer marker in the parent DOM.
+                const checkDisplayed = () => {
+                    if (sessionEnded) { displayCheck = null; return; }
+                    const marker = window.parent.document.getElementById(
+                        `bondhu-answer-${token}`
+                    );
+                    if (!marker) {
+                        displayCheck = requestAnimationFrame(checkDisplayed);
+                        return;
+                    }
+                    // Give the complete answer DOM a paint opportunity before ACK.
+                    displayCheck = requestAnimationFrame(() => {
+                        displayCheck = requestAnimationFrame(() => {
+                            displayCheck = null;
+                            displayedAnswer = token;
+                            answerCompleted();
+                        });
+                    });
+                };
+                displayCheck = requestAnimationFrame(checkDisplayed);
+            }
+        }
+    }
+);
+
+// Release timers, recording and microphone when the next-question window expires.
+function endSession() {
+    sessionEnded = true;
+    clearInterval(timerInterval);
+    if (animationFrame) cancelAnimationFrame(animationFrame);
+    if (displayCheck) cancelAnimationFrame(displayCheck);
+    if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+    waitingForStreamlit = false;
+    nextQuestionWaiting = false;
+    setStatus("👋 Voice session ended.");
+    timer.innerText = "00:00";
+    updateHeight();
+}
+
+componentReady();
+updateHeight();
+window.addEventListener("resize", updateHeight);
+window.addEventListener("pagehide", () => endSession());
+</script>
+</body>
+</html>

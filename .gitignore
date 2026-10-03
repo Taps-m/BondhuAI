@@ -2,3 +2,5 @@
 venv/
 .venv/
 __pycache__/
+# Local anonymous visitor-count database
+data/visitors.sqlite3*
