@@ -109,6 +109,8 @@ let recordingId = null;
 let displayedAnswer = null;
 let displayCheck = null;
 let startingRecording = false;
+let microphoneAttempt = 0;
+let cancelMicrophoneStart = null;
 let speechStart = null;
 let initialized = false;
 let uiLanguage = "en";
@@ -147,6 +149,7 @@ const labels = {
     "🎙️ Ask your next question.": ["আর কিছু জানতে চান?", "Start speaking before the countdown ends, or let the conversation finish.", "সময় শেষ হওয়ার আগে পরের প্রশ্নটি বলুন। চুপ থাকলে আলোচনা শেষ হবে।", "countdown"],
     "👋 Voice session ended.": ["আলোচনা শেষ হয়েছে", "Your microphone is off. Start again whenever you are ready.", "মাইক্রোফোন বন্ধ আছে। চাইলে আবার শুরু করুন।", "ended"],
     "❌ Microphone access was denied or unavailable.": ["মাইক্রোফোন চালু করা যায়নি", "Allow microphone access in your browser and device settings, then try again.", "ব্রাউজার ও ডিভাইসের সেটিংসে মাইক্রোফোনের অনুমতি দিয়ে আবার চেষ্টা করুন।", "error"],
+    "Microphone permission is still pending.": ["মাইক্রোফোনের অনুমতি পাওয়া যায়নি", "Check the browser microphone permission, then select Start again.", "ব্রাউজারে মাইক্রোফোনের অনুমতি দিয়ে আবার শুরু করুন।", "error"],
     "❌ Voice recording is not supported.": ["এই ব্রাউজারে রেকর্ডিং করা যাচ্ছে না", "Try a browser that supports microphone recording, or type your question.", "অন্য ব্রাউজার ব্যবহার করুন অথবা প্রশ্ন লিখে পাঠান।", "error"],
     "🎙️ No speech detected.": ["কথা শোনা যায়নি", "Start again and speak a little closer to your microphone.", "আবার শুরু করে মাইক্রোফোনের একটু কাছে কথা বলুন।", "ended"]
 };
@@ -309,18 +312,30 @@ async function startRecording() {
 
 
     startingRecording = true;
+    const attempt = ++microphoneAttempt;
+    let startupTimer = null;
     try {
 
         setStatus("Connecting microphone…");
 
 
-        const stream =
-            await navigator.mediaDevices.getUserMedia(
-                {
-                    audio: true
-                }
-            );
-
+        const cancelled = new Promise((_, reject) => {
+            cancelMicrophoneStart = () => reject(new Error("Microphone startup cancelled"));
+            startupTimer = setTimeout(() => {
+                const error = new Error("Check microphone permissions and try again.");
+                error.name = "MicrophoneStartupTimeout";
+                reject(error);
+            }, 20000);
+        });
+        const request = navigator.mediaDevices.getUserMedia({audio: true});
+        request.then(stream => {
+            if (attempt !== microphoneAttempt || sessionEnded) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+        }, () => {});
+        const stream = await Promise.race([request, cancelled]);
+        clearTimeout(startupTimer);
+        if (attempt !== microphoneAttempt) return;
 
         if (sessionEnded) {
             stream.getTracks().forEach(track => track.stop());
@@ -491,6 +506,7 @@ async function startRecording() {
     }
 
     catch (error) {
+        if (attempt !== microphoneAttempt) return;
 
         console.error(
             "Microphone error:",
@@ -503,9 +519,14 @@ async function startRecording() {
 
         isRecording = false;
         endSession();
-        setStatus("❌ Microphone access was denied or unavailable.");
+        setStatus(error.name === "MicrophoneStartupTimeout"
+            ? "Microphone permission is still pending."
+            : "❌ Microphone access was denied or unavailable.");
 
     } finally {
+        clearTimeout(startupTimer);
+        if (attempt !== microphoneAttempt) return;
+        cancelMicrophoneStart = null;
         startingRecording = false;
         restartButton.disabled = isRecording;
         updateHeight();
@@ -980,6 +1001,10 @@ window.addEventListener(
 // Release timers, recording and microphone when the next-question window expires.
 function endSession() {
     sessionEnded = true;
+    microphoneAttempt++;
+    if (cancelMicrophoneStart) cancelMicrophoneStart();
+    cancelMicrophoneStart = null;
+    startingRecording = false;
     clearInterval(timerInterval);
     if (animationFrame) cancelAnimationFrame(animationFrame);
     if (displayCheck) cancelAnimationFrame(displayCheck);
